@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2019 Project OpenUBL, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
@@ -31,8 +31,8 @@ public class KeycloakServer implements QuarkusTestResourceLifecycleManager {
 
     @Override
     public Map<String, String> start() {
-        keycloak = new FixedHostPortGenericContainer("quay.io/keycloak/keycloak:" + System.getProperty("keycloak.version", "12.0.1"))
-                .withFixedExposedPort(8180, 8080)
+        keycloak = new GenericContainer("quay.io/keycloak/keycloak:" + System.getProperty("keycloak.version", "12.0.4"))
+                .withExposedPorts(8080)
                 .withEnv("DB_VENDOR", "H2")
                 .withEnv("KEYCLOAK_USER", "admin")
                 .withEnv("KEYCLOAK_PASSWORD", "admin")
@@ -40,7 +40,14 @@ public class KeycloakServer implements QuarkusTestResourceLifecycleManager {
                 .withClasspathResourceMapping("openubl-realm.json", "/tmp/realm.json", BindMode.READ_ONLY)
                 .waitingFor(Wait.forHttp("/auth"));
         keycloak.start();
-        return Collections.emptyMap();
+
+        String host = keycloak.getHost();
+        Integer port = keycloak.getMappedPort(8080);
+
+        return Collections.singletonMap(
+                "quarkus.oidc.auth-server-url",
+                "http://" + host + ":" + port + "/auth/realms/openubl"
+        );
     }
 
     @Override

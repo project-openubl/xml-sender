@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2019 Project OpenUBL, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
@@ -16,74 +16,99 @@
  */
 package io.github.project.openubl.xsender.models.jpa.entities;
 
-import io.github.project.openubl.xmlsenderws.webservices.models.DeliveryURLType;
-import io.github.project.openubl.xmlsenderws.webservices.xml.DocumentType;
 import io.github.project.openubl.xsender.models.DeliveryStatusType;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import org.hibernate.annotations.Type;
 
 import javax.persistence.*;
 import javax.validation.constraints.NotNull;
-import java.util.Objects;
+import java.util.*;
 
 @Entity
 @Table(name = "UBL_DOCUMENT")
 public class UBLDocumentEntity extends PanacheEntityBase {
 
     @Id
-    @Column(name = "ID")
+    @Column(name = "id")
     @Access(AccessType.PROPERTY)
     private String id;
 
     @NotNull
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(foreignKey = @ForeignKey, name = "COMPANY_ID")
+    @JoinColumn(foreignKey = @ForeignKey, name = "company_id")
     private CompanyEntity company;
 
     @NotNull
-    @Column(name = "RUC")
+    @Column(name = "created_on")
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date createdOn;
+
+    @Type(type = "org.hibernate.type.YesNoType")
+    @Column(name = "valid")
+    private Boolean valid;
+
+    @Column(name = "validation_error")
+    private String validationError;
+
+    @NotNull
+    @Column(name = "retries")
+    private int retries;
+
+    @Column(name = "will_retry_on")
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date willRetryOn;
+
+    // XML Content
+
+    @Column(name = "ruc")
     private String ruc;
 
-    @NotNull
-    @Column(name = "DOCUMENT_ID")
+    @Column(name = "document_id")
     private String documentID;
 
-    @NotNull
-    @Enumerated(EnumType.STRING)
-    @Column(name = "DOCUMENT_TYPE")
-    private DocumentType documentType;
+    @Column(name = "document_type")
+    private String documentType;
+
+    @Column(name = "voided_line_document_type_code")
+    private String voidedLineDocumentTypeCode;
+
+    // Storage
 
     @NotNull
-    @Enumerated(EnumType.STRING)
-    @Column(name = "DELIVERY_TYPE")
-    private DeliveryURLType deliveryType;
-
-    @NotNull
-    @Column(name = "FILENAME")
-    private String filename;
-
-    @NotNull
-    @Column(name = "STORAGE_FILE")
+    @Column(name = "storage_file")
     private String storageFile;
 
-    @Column(name = "STORAGE_CDR")
+    @Column(name = "storage_cdr")
     private String storageCdr;
+
+    //
 
     @NotNull
     @Enumerated(EnumType.STRING)
-    @Column(name = "DELIVERY_STATUS")
+    @Column(name = "delivery_status")
     private DeliveryStatusType deliveryStatus;
 
-    @Column(name = "SUNAT_TICKET")
+    @Column(name = "sunat_ticket")
     private String sunatTicket;
 
-    @Column(name = "SUNAT_STATUS")
+    @Column(name = "sunat_status")
     private String sunatStatus;
 
-    @Column(name = "SUNAT_CODE")
+    @Column(name = "sunat_code")
     private Integer sunatCode;
 
-    @Column(name = "SUNAT_DESCRIPTION")
+    @Column(name = "sunat_description")
     private String sunatDescription;
+
+    @ElementCollection
+    @Column(name="value")
+    @CollectionTable(name = "ubl_document_sunat_notes", joinColumns={ @JoinColumn(name="ubl_document_id") })
+    private Set<String> sunatNotes;
+
+    //
+
+    @OneToMany(fetch = FetchType.LAZY, mappedBy = "ublDocument")
+    private List<UBLDocumentEventEntity> sunatEvents = new ArrayList<>();
 
     public String getId() {
         return id;
@@ -99,6 +124,46 @@ public class UBLDocumentEntity extends PanacheEntityBase {
 
     public void setCompany(CompanyEntity company) {
         this.company = company;
+    }
+
+    public Date getCreatedOn() {
+        return createdOn;
+    }
+
+    public void setCreatedOn(Date createdOn) {
+        this.createdOn = createdOn;
+    }
+
+    public Boolean getValid() {
+        return valid;
+    }
+
+    public void setValid(Boolean valid) {
+        this.valid = valid;
+    }
+
+    public String getValidationError() {
+        return validationError;
+    }
+
+    public void setValidationError(String validationError) {
+        this.validationError = validationError;
+    }
+
+    public int getRetries() {
+        return retries;
+    }
+
+    public void setRetries(int retries) {
+        this.retries = retries;
+    }
+
+    public Date getWillRetryOn() {
+        return willRetryOn;
+    }
+
+    public void setWillRetryOn(Date willRetryOn) {
+        this.willRetryOn = willRetryOn;
     }
 
     public String getRuc() {
@@ -117,28 +182,20 @@ public class UBLDocumentEntity extends PanacheEntityBase {
         this.documentID = documentID;
     }
 
-    public DeliveryURLType getDeliveryType() {
-        return deliveryType;
-    }
-
-    public void setDeliveryType(DeliveryURLType deliveryType) {
-        this.deliveryType = deliveryType;
-    }
-
-    public DocumentType getDocumentType() {
+    public String getDocumentType() {
         return documentType;
     }
 
-    public void setDocumentType(DocumentType documentType) {
+    public void setDocumentType(String documentType) {
         this.documentType = documentType;
     }
 
-    public String getFilename() {
-        return filename;
+    public String getVoidedLineDocumentTypeCode() {
+        return voidedLineDocumentTypeCode;
     }
 
-    public void setFilename(String filename) {
-        this.filename = filename;
+    public void setVoidedLineDocumentTypeCode(String voidedLineDocumentTypeCode) {
+        this.voidedLineDocumentTypeCode = voidedLineDocumentTypeCode;
     }
 
     public String getStorageFile() {
@@ -197,6 +254,22 @@ public class UBLDocumentEntity extends PanacheEntityBase {
         this.sunatDescription = sunatDescription;
     }
 
+    public List<UBLDocumentEventEntity> getSunatEvents() {
+        return sunatEvents;
+    }
+
+    public void setSunatEvents(List<UBLDocumentEventEntity> sunatEvents) {
+        this.sunatEvents = sunatEvents;
+    }
+
+    public Set<String> getSunatNotes() {
+        return sunatNotes;
+    }
+
+    public void setSunatNotes(Set<String> sunatNotes) {
+        this.sunatNotes = sunatNotes;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -215,11 +288,15 @@ public class UBLDocumentEntity extends PanacheEntityBase {
     public static final class Builder {
         private String id;
         private CompanyEntity company;
+        private Date createdOn;
+        private Boolean valid;
+        private String validationError;
+        private int retries;
+        private Date willRetryOn;
         private String ruc;
         private String documentID;
-        private DocumentType documentType;
-        private DeliveryURLType deliveryType;
-        private String filename;
+        private String documentType;
+        private String voidedLineDocumentTypeCode;
         private String storageFile;
         private String storageCdr;
         private DeliveryStatusType deliveryStatus;
@@ -245,6 +322,31 @@ public class UBLDocumentEntity extends PanacheEntityBase {
             return this;
         }
 
+        public Builder withCreatedOn(Date createdOn) {
+            this.createdOn = createdOn;
+            return this;
+        }
+
+        public Builder withValid(Boolean valid) {
+            this.valid = valid;
+            return this;
+        }
+
+        public Builder withValidationError(String validationError) {
+            this.validationError = validationError;
+            return this;
+        }
+
+        public Builder withRetries(int retries) {
+            this.retries = retries;
+            return this;
+        }
+
+        public Builder withWillRetryOn(Date willRetryOn) {
+            this.willRetryOn = willRetryOn;
+            return this;
+        }
+
         public Builder withRuc(String ruc) {
             this.ruc = ruc;
             return this;
@@ -255,18 +357,13 @@ public class UBLDocumentEntity extends PanacheEntityBase {
             return this;
         }
 
-        public Builder withDocumentType(DocumentType documentType) {
+        public Builder withDocumentType(String documentType) {
             this.documentType = documentType;
             return this;
         }
 
-        public Builder withDeliveryType(DeliveryURLType deliveryType) {
-            this.deliveryType = deliveryType;
-            return this;
-        }
-
-        public Builder withFilename(String filename) {
-            this.filename = filename;
+        public Builder withVoidedLineDocumentTypeCode(String voidedLineDocumentTypeCode) {
+            this.voidedLineDocumentTypeCode = voidedLineDocumentTypeCode;
             return this;
         }
 
@@ -309,11 +406,15 @@ public class UBLDocumentEntity extends PanacheEntityBase {
             UBLDocumentEntity uBLDocumentEntity = new UBLDocumentEntity();
             uBLDocumentEntity.setId(id);
             uBLDocumentEntity.setCompany(company);
+            uBLDocumentEntity.setCreatedOn(createdOn);
+            uBLDocumentEntity.setValid(valid);
+            uBLDocumentEntity.setValidationError(validationError);
+            uBLDocumentEntity.setRetries(retries);
+            uBLDocumentEntity.setWillRetryOn(willRetryOn);
             uBLDocumentEntity.setRuc(ruc);
             uBLDocumentEntity.setDocumentID(documentID);
             uBLDocumentEntity.setDocumentType(documentType);
-            uBLDocumentEntity.setDeliveryType(deliveryType);
-            uBLDocumentEntity.setFilename(filename);
+            uBLDocumentEntity.setVoidedLineDocumentTypeCode(voidedLineDocumentTypeCode);
             uBLDocumentEntity.setStorageFile(storageFile);
             uBLDocumentEntity.setStorageCdr(storageCdr);
             uBLDocumentEntity.setDeliveryStatus(deliveryStatus);

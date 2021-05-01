@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2019 Project OpenUBL, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
@@ -16,14 +16,20 @@
  */
 package io.github.project.openubl.xsender.resources;
 
-import io.github.project.openubl.xsender.exceptions.InvalidXMLFileException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.debezium.outbox.quarkus.ExportedEvent;
 import io.github.project.openubl.xsender.exceptions.StorageException;
-import io.github.project.openubl.xsender.exceptions.UnsupportedDocumentTypeException;
 import io.github.project.openubl.xsender.files.FilesManager;
 import io.github.project.openubl.xsender.idm.*;
+import io.github.project.openubl.xsender.kafka.idm.CompanyCUDEventRepresentation;
+import io.github.project.openubl.xsender.kafka.idm.UBLDocumentCUDEventRepresentation;
+import io.github.project.openubl.xsender.kafka.producers.EntityEventProducer;
+import io.github.project.openubl.xsender.kafka.producers.EntityType;
+import io.github.project.openubl.xsender.kafka.producers.EventType;
+import io.github.project.openubl.xsender.kafka.utils.EventEntityToRepresentation;
 import io.github.project.openubl.xsender.managers.CompanyManager;
 import io.github.project.openubl.xsender.managers.DocumentsManager;
-import io.github.project.openubl.xsender.models.ContextBean;
 import io.github.project.openubl.xsender.models.PageBean;
 import io.github.project.openubl.xsender.models.PageModel;
 import io.github.project.openubl.xsender.models.SortBean;
@@ -35,26 +41,21 @@ import io.github.project.openubl.xsender.models.utils.EntityToRepresentation;
 import io.github.project.openubl.xsender.resources.utils.ResourceUtils;
 import io.github.project.openubl.xsender.security.UserIdentity;
 import org.apache.commons.io.IOUtils;
-import org.apache.http.NameValuePair;
-import org.apache.http.message.BasicNameValuePair;
 import org.jboss.logging.Logger;
 import org.jboss.resteasy.plugins.providers.multipart.InputPart;
 import org.jboss.resteasy.plugins.providers.multipart.MultipartFormDataInput;
 
 import javax.enterprise.context.ApplicationScoped;
+import javax.enterprise.event.Event;
 import javax.inject.Inject;
 import javax.transaction.Transactional;
 import javax.validation.constraints.NotNull;
 import javax.ws.rs.BadRequestException;
-import javax.ws.rs.InternalServerErrorException;
 import javax.ws.rs.NotFoundException;
-import javax.ws.rs.core.Context;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriInfo;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Map;
 
@@ -64,8 +65,8 @@ public class DefaultCompanyResource implements CompanyResource {
 
     private static final Logger LOG = Logger.getLogger(DefaultCompanyResource.class);
 
-    @Context
-    UriInfo uriInfo;
+    @Inject
+    UserIdentity userIdentity;
 
     @Inject
     CompanyRepository companyRepository;
@@ -73,48 +74,78 @@ public class DefaultCompanyResource implements CompanyResource {
     @Inject
     UBLDocumentRepository documentRepository;
 
+    // Managers
+
+    @Inject
+    CompanyManager companyManager;
+
     @Inject
     DocumentsManager documentsManager;
 
     @Inject
     FilesManager filesManager;
 
-    @Inject
-    CompanyManager companyManager;
+    // Events
 
     @Inject
-    UserIdentity userIdentity;
+    Event<ExportedEvent<?, ?>> event;
 
+    @Inject
+    ObjectMapper objectMapper;
+
+    @Override
     public CompanyRepresentation getCompany(String company) {
         CompanyEntity organizationEntity = companyRepository.findByNameAndOwner(company, userIdentity.getUsername()).orElseThrow(NotFoundException::new);
         return EntityToRepresentation.toRepresentation(organizationEntity);
     }
 
+    @Override
     public CompanyRepresentation updateCompany(String company, CompanyRepresentation rep) {
-        CompanyEntity organizationEntity = companyRepository.findByName(company).orElseThrow(NotFoundException::new);
-        organizationEntity = companyManager.updateCompany(rep, organizationEntity);
-        return EntityToRepresentation.toRepresentation(organizationEntity);
+        CompanyEntity companyEntity = companyRepository.findByNameAndOwner(company, userIdentity.getUsername()).orElseThrow(NotFoundException::new);
+        CompanyEntity updatedCompanyEntity = companyManager.updateCompany(rep, companyEntity);
+
+        try {
+            CompanyCUDEventRepresentation eventRep = EventEntityToRepresentation.toRepresentation(companyEntity);
+            String eventPayload = objectMapper.writeValueAsString(eventRep);
+            event.fire(new EntityEventProducer(companyEntity.getId(), EntityType.company, EventType.UPDATED, eventPayload));
+        } catch (JsonProcessingException e) {
+            LOG.error(e);
+        }
+
+        return EntityToRepresentation.toRepresentation(updatedCompanyEntity);
     }
 
     @Override
-    public void deleteCompany(@NotNull String company) {
+    public void deleteCompany(String company) {
         CompanyEntity companyEntity = companyRepository.findByNameAndOwner(company, userIdentity.getUsername()).orElseThrow(NotFoundException::new);
         companyRepository.deleteById(companyEntity.getId());
+
+        try {
+            CompanyCUDEventRepresentation eventRep = EventEntityToRepresentation.toRepresentation(companyEntity);
+            String eventPayload = objectMapper.writeValueAsString(eventRep);
+            event.fire(new EntityEventProducer(companyEntity.getId(), EntityType.company, EventType.DELETED, eventPayload));
+        } catch (JsonProcessingException e) {
+            LOG.error(e);
+        }
     }
 
-    public void updateCompanySUNATCredentials(String org, SunatCredentialsRepresentation rep) {
-        CompanyEntity organizationEntity = companyRepository.findByName(org).orElseThrow(NoClassDefFoundError::new);
-        companyManager.updateCorporateCredentials(rep, organizationEntity);
+    @Override
+    public void updateCompanySUNATCredentials(String company, SunatCredentialsRepresentation rep) {
+        CompanyEntity companyEntity = companyRepository.findByNameAndOwner(company, userIdentity.getUsername()).orElseThrow(NoClassDefFoundError::new);
+        companyManager.updateCorporateCredentials(rep, companyEntity);
+
+        try {
+            CompanyCUDEventRepresentation eventRep = EventEntityToRepresentation.toRepresentation(companyEntity);
+            String eventPayload = objectMapper.writeValueAsString(eventRep);
+            event.fire(new EntityEventProducer(companyEntity.getId(), EntityType.company, EventType.UPDATED, eventPayload));
+        } catch (JsonProcessingException e) {
+            LOG.error(e);
+        }
     }
 
     @Override
     public PageRepresentation<DocumentRepresentation> listDocuments(@NotNull String company, String filterText, Integer offset, Integer limit, List<String> sortBy) {
         CompanyEntity companyEntity = companyRepository.findByNameAndOwner(company, userIdentity.getUsername()).orElseThrow(NotFoundException::new);
-
-        ContextBean contextBean = ContextBean.Builder.aContextBean()
-                .withUsername(userIdentity.getUsername())
-                .withUriInfo(uriInfo)
-                .build();
 
         PageBean pageBean = ResourceUtils.getPageBean(offset, limit);
         List<SortBean> sortBeans = ResourceUtils.getSortBeans(sortBy, UBLDocumentRepository.SORT_BY_FIELDS);
@@ -126,26 +157,12 @@ public class DefaultCompanyResource implements CompanyResource {
             pageModel = documentRepository.list(companyEntity, pageBean, sortBeans);
         }
 
-        List<NameValuePair> queryParameters = ResourceUtils.buildNameValuePairs(offset, limit, sortBeans);
-        if (filterText != null) {
-            queryParameters.add(new BasicNameValuePair("name", filterText));
-        }
-
-        try {
-            return EntityToRepresentation.toRepresentation(
-                    pageModel,
-                    EntityToRepresentation::toRepresentation,
-                    contextBean.getUriInfo(),
-                    queryParameters
-            );
-        } catch (URISyntaxException e) {
-            throw new InternalServerErrorException();
-        }
+        return EntityToRepresentation.toRepresentation(pageModel, EntityToRepresentation::toRepresentation);
     }
 
     @Override
     public Response createDocument(@NotNull String company, MultipartFormDataInput input) {
-        CompanyEntity companyEntity = companyRepository.findByName(company).orElseThrow(NotFoundException::new);
+        CompanyEntity companyEntity = companyRepository.findByNameAndOwner(company, userIdentity.getUsername()).orElseThrow(NotFoundException::new);
 
         //
 
@@ -177,13 +194,14 @@ public class DefaultCompanyResource implements CompanyResource {
         UBLDocumentEntity documentEntity;
         try {
             documentEntity = documentsManager.createDocumentAndScheduleDelivery(companyEntity, xmlFile);
-        } catch (InvalidXMLFileException e) {
-            LOG.error(e);
-            ErrorRepresentation error = new ErrorRepresentation("Form[file] is not a valid XML file or is corrupted");
-            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
-        } catch (UnsupportedDocumentTypeException e) {
-            ErrorRepresentation error = new ErrorRepresentation(e.getMessage());
-            return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+
+            try {
+                UBLDocumentCUDEventRepresentation eventRep = EventEntityToRepresentation.toRepresentation(documentEntity);
+                String eventPayload = objectMapper.writeValueAsString(eventRep);
+                event.fire(new EntityEventProducer(companyEntity.getId(), EntityType.document, EventType.CREATED, eventPayload));
+            } catch (JsonProcessingException e) {
+                LOG.error(e);
+            }
         } catch (StorageException e) {
             LOG.error(e);
             ErrorRepresentation error = new ErrorRepresentation(e.getMessage());
@@ -211,7 +229,7 @@ public class DefaultCompanyResource implements CompanyResource {
         return Response.ok(file)
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + documentEntity.getFilename() + ".xml" + "\""
+                        "attachment; filename=\"" + documentEntity.getDocumentID() + ".xml" + "\""
                 )
                 .build();
     }
@@ -240,7 +258,7 @@ public class DefaultCompanyResource implements CompanyResource {
         return Response.ok(file)
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + documentEntity.getFilename() + ".zip" + "\""
+                        "attachment; filename=\"" + documentEntity.getDocumentType() + ".zip" + "\""
                 )
                 .build();
     }

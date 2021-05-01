@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2019 Project OpenUBL, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
@@ -17,11 +17,12 @@
 package io.github.project.openubl.xsender.basic.resources.config;
 
 import io.restassured.RestAssured;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 public abstract class BaseKeycloakTest {
 
-    private static final String KEYCLOAK_SERVER_URL = System.getProperty("keycloak.url", "http://localhost:8180/auth");
-    private static final String KEYCLOAK_REALM = "openubl";
+    @ConfigProperty(name = "quarkus.oidc.auth-server-url")
+    String oidcAuthServerUrl;
 
     protected String getAccessToken(String userName) {
         return RestAssured
@@ -32,7 +33,7 @@ public abstract class BaseKeycloakTest {
                 .param("client_id", "xsender")
                 .param("client_secret", "secret")
                 .when()
-                .post(KEYCLOAK_SERVER_URL + "/realms/" + KEYCLOAK_REALM + "/protocol/openid-connect/token")
+                .post(oidcAuthServerUrl + "/protocol/openid-connect/token")
                 .jsonPath().get("access_token");
     }
 

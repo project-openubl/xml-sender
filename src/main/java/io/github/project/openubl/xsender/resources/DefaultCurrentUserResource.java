@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2019 Project OpenUBL, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
@@ -16,10 +16,17 @@
  */
 package io.github.project.openubl.xsender.resources;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.debezium.outbox.quarkus.ExportedEvent;
 import io.github.project.openubl.xsender.idm.CompanyRepresentation;
 import io.github.project.openubl.xsender.idm.PageRepresentation;
+import io.github.project.openubl.xsender.kafka.idm.CompanyCUDEventRepresentation;
+import io.github.project.openubl.xsender.kafka.producers.EntityEventProducer;
+import io.github.project.openubl.xsender.kafka.producers.EntityType;
+import io.github.project.openubl.xsender.kafka.producers.EventType;
+import io.github.project.openubl.xsender.kafka.utils.EventEntityToRepresentation;
 import io.github.project.openubl.xsender.managers.CompanyManager;
-import io.github.project.openubl.xsender.models.ContextBean;
 import io.github.project.openubl.xsender.models.PageBean;
 import io.github.project.openubl.xsender.models.PageModel;
 import io.github.project.openubl.xsender.models.SortBean;
@@ -28,25 +35,20 @@ import io.github.project.openubl.xsender.models.jpa.entities.CompanyEntity;
 import io.github.project.openubl.xsender.models.utils.EntityToRepresentation;
 import io.github.project.openubl.xsender.resources.utils.ResourceUtils;
 import io.github.project.openubl.xsender.security.UserIdentity;
-import org.apache.http.NameValuePair;
-import org.apache.http.message.BasicNameValuePair;
+import org.jboss.logging.Logger;
 
 import javax.enterprise.context.ApplicationScoped;
+import javax.enterprise.event.Event;
 import javax.inject.Inject;
 import javax.transaction.Transactional;
-import javax.ws.rs.InternalServerErrorException;
-import javax.ws.rs.core.Context;
 import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriInfo;
-import java.net.URISyntaxException;
 import java.util.List;
 
 @Transactional
 @ApplicationScoped
 public class DefaultCurrentUserResource implements CurrentUserResource {
 
-    @Context
-    UriInfo uriInfo;
+    private static final Logger LOG = Logger.getLogger(CompanyManager.class);
 
     @Inject
     UserIdentity userIdentity;
@@ -57,6 +59,12 @@ public class DefaultCurrentUserResource implements CurrentUserResource {
     @Inject
     CompanyManager companyManager;
 
+    @Inject
+    Event<ExportedEvent<?, ?>> event;
+
+    @Inject
+    ObjectMapper objectMapper;
+
     @Override
     public Response createCompany(CompanyRepresentation rep) {
         if (companyRepository.findByName(rep.getName()).isPresent()) {
@@ -65,9 +73,18 @@ public class DefaultCurrentUserResource implements CurrentUserResource {
                     .build();
         }
 
-        CompanyEntity company = companyManager.createCompany(userIdentity.getUsername(), rep);
+        CompanyEntity companyEntity = companyManager.createCompany(userIdentity.getUsername(), rep);
+
+        try {
+            CompanyCUDEventRepresentation eventRep = EventEntityToRepresentation.toRepresentation(companyEntity);
+            String eventPayload = objectMapper.writeValueAsString(eventRep);
+            event.fire(new EntityEventProducer(companyEntity.getId(), EntityType.company, EventType.CREATED, eventPayload));
+        } catch (JsonProcessingException e) {
+            LOG.error(e);
+        }
+
         return Response.ok()
-                .entity(EntityToRepresentation.toRepresentation(company))
+                .entity(EntityToRepresentation.toRepresentation(companyEntity))
                 .build();
     }
 
@@ -77,36 +94,17 @@ public class DefaultCurrentUserResource implements CurrentUserResource {
             Integer limit,
             List<String> sortBy
     ) {
-        ContextBean contextBean = ContextBean.Builder.aContextBean()
-                .withUsername(userIdentity.getUsername())
-                .withUriInfo(uriInfo)
-                .build();
-
         PageBean pageBean = ResourceUtils.getPageBean(offset, limit);
         List<SortBean> sortBeans = ResourceUtils.getSortBeans(sortBy, CompanyRepository.SORT_BY_FIELDS);
 
         PageModel<CompanyEntity> pageModel;
         if (filterText != null && !filterText.trim().isEmpty()) {
-            pageModel = CompanyRepository.list(contextBean.getUsername(), filterText, pageBean, sortBeans);
+            pageModel = CompanyRepository.list(userIdentity.getUsername(), filterText, pageBean, sortBeans);
         } else {
-            pageModel = CompanyRepository.list(contextBean.getUsername(), pageBean, sortBeans);
+            pageModel = CompanyRepository.list(userIdentity.getUsername(), pageBean, sortBeans);
         }
 
-        List<NameValuePair> queryParameters = ResourceUtils.buildNameValuePairs(offset, limit, sortBeans);
-        if (filterText != null) {
-            queryParameters.add(new BasicNameValuePair("name", filterText));
-        }
-
-        try {
-            return EntityToRepresentation.toRepresentation(
-                    pageModel,
-                    EntityToRepresentation::toRepresentation,
-                    contextBean.getUriInfo(),
-                    queryParameters
-            );
-        } catch (URISyntaxException e) {
-            throw new InternalServerErrorException();
-        }
+        return EntityToRepresentation.toRepresentation(pageModel, EntityToRepresentation::toRepresentation);
     }
 
 }

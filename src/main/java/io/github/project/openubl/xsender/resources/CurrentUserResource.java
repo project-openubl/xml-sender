@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2019 Project OpenUBL, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
@@ -19,6 +19,8 @@ package io.github.project.openubl.xsender.resources;
 import io.github.project.openubl.xsender.idm.CompanyRepresentation;
 import io.github.project.openubl.xsender.idm.PageRepresentation;
 
+import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
 import javax.ws.rs.*;
 import javax.ws.rs.core.Response;
 import java.util.List;
@@ -33,7 +35,7 @@ public interface CurrentUserResource {
      */
     @POST
     @Path("/companies")
-    Response createCompany(CompanyRepresentation rep);
+    Response createCompany(@NotNull @Valid CompanyRepresentation rep);
 
     /**
      * List companies for the authenticated user
@@ -44,7 +46,7 @@ public interface CurrentUserResource {
             @QueryParam("filterText") String filterText,
             @QueryParam("offset") @DefaultValue("0") Integer offset,
             @QueryParam("limit") @DefaultValue("10") Integer limit,
-            @QueryParam("sort_by") List<String> sortBy
+            @QueryParam("sort_by") @DefaultValue("createdOn:desc") List<String> sortBy
     );
 }
 

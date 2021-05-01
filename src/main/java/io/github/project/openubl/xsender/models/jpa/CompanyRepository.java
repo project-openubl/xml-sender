@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2019 Project OpenUBL, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
@@ -34,7 +34,7 @@ import java.util.Optional;
 @ApplicationScoped
 public class CompanyRepository implements PanacheRepositoryBase<CompanyEntity, String> {
 
-    public static final String[] SORT_BY_FIELDS = {"name"};
+    public static final String[] SORT_BY_FIELDS = {"name", "createdOn"};
 
     public Optional<CompanyEntity> findByName(String name) {
         return find("name", name).firstResultOptional();

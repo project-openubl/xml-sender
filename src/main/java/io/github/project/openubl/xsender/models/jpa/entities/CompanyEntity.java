@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2019 Project OpenUBL, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
@@ -22,6 +22,7 @@ import javax.persistence.*;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
+import java.util.Date;
 import java.util.Objects;
 
 @Entity
@@ -31,20 +32,25 @@ import java.util.Objects;
 public class CompanyEntity extends PanacheEntityBase {
 
     @Id
-    @Column(name = "ID")
+    @Column(name = "id")
     @Access(AccessType.PROPERTY)
     private String id;
 
     @NotNull
-    @Column(name = "OWNER")
+    @Column(name = "owner")
     private String owner;
 
     @Pattern(regexp = "[a-z0-9]([-a-z0-9]*[a-z0-9])?", message = "label must consist of lower case alphanumeric characters or '-', and must start and end with an alphanumeric character (e.g. 'my-name', or '123-abc')")
     @NotNull
-    @Column(name = "NAME")
+    @Column(name = "name")
     private String name;
 
     private String description;
+
+    @NotNull
+    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "created_on")
+    private Date createdOn;
 
     @NotNull
     @Valid
@@ -57,7 +63,7 @@ public class CompanyEntity extends PanacheEntityBase {
     private SunatUrlsEntity sunatUrls;
 
     @Version
-    @Column(name = "VERSION")
+    @Column(name = "version")
     private int version;
 
     public String getId() {
@@ -90,6 +96,14 @@ public class CompanyEntity extends PanacheEntityBase {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public Date getCreatedOn() {
+        return createdOn;
+    }
+
+    public void setCreatedOn(Date createdOn) {
+        this.createdOn = createdOn;
     }
 
     public SunatCredentialsEntity getSunatCredentials() {
@@ -134,6 +148,7 @@ public class CompanyEntity extends PanacheEntityBase {
         private String owner;
         private String name;
         private String description;
+        private Date createdOn;
         private SunatCredentialsEntity sunatCredentials;
         private SunatUrlsEntity sunatUrls;
         private int version;
@@ -165,6 +180,11 @@ public class CompanyEntity extends PanacheEntityBase {
             return this;
         }
 
+        public Builder withCreatedOn(Date createdOn) {
+            this.createdOn = createdOn;
+            return this;
+        }
+
         public Builder withSunatCredentials(SunatCredentialsEntity sunatCredentials) {
             this.sunatCredentials = sunatCredentials;
             return this;
@@ -186,6 +206,7 @@ public class CompanyEntity extends PanacheEntityBase {
             companyEntity.setOwner(owner);
             companyEntity.setName(name);
             companyEntity.setDescription(description);
+            companyEntity.setCreatedOn(createdOn);
             companyEntity.setSunatCredentials(sunatCredentials);
             companyEntity.setSunatUrls(sunatUrls);
             companyEntity.setVersion(version);
